@@ -29,68 +29,85 @@ GPIO.setup(21,GPIO.OUT) #c
 #FUNCTION DECLARATIONS
 ########################################################################################
 
-def setMUX(MUX, a, b, c):
+def setMUX(MUX, c, b, a):
     """this function allows you to set the MUX selection by parsing either MUX 1 or 2 ,
         and the corresponding a,b,c commands (HIGH or LOW). Irshaad fix this doc string it is terrible"""
     
     if MUX==1: #ROWS: A,B,C
-        GPIO.output(13, GPIO.a) #MUX 1a
-        GPIO.output(19, GPIO.b) #MUX 1b
-        GPIO.output(26, GPIO.c) #MUX 1c
+        GPIO.output(13, a) #MUX 1a
+        GPIO.output(19, b) #MUX 1b
+        GPIO.output(26, c) #MUX 1c
         
         
     if MUX==2: #COLS: I,II,III,IV,V,VI
-        GPIO.output(16, GPIO.a) #MUX 2a
-        GPIO.output(20, GPIO.b) #MUX 2b
-        GPIO.output(21, GPIO.c) #MUX 2c
+        GPIO.output(16, a) #MUX 2a
+        GPIO.output(20, b) #MUX 2b
+        GPIO.output(21, c) #MUX 2c
 
 
 def choose(sensor):
     """This function allows you to choose an LED or PT (i.e. turning it ON) by parsing the
     appropriate LED or PT number, according to the diagram below. NOTE THE LED NUMBERING
       I   II  III  IV   V   VI
-    A 0   1   2   3    4    5  
-    B 6   7   9   10   11   12  
+    A 1   2   3    4    5   6
+    B 7   8   9   10   11   12  
     C 13  14  15  16   17   18
     
     currently this only supports a 3x6 matrix"""
     
-    A = ("0", "1", "2", "3", "4", "5")
-    B = ("6", "7", "8", "9", "10", "11")
-    C = ("12", "13", "14", "15", "16", "17")
+    A = (1, 2, 3, 4, 5, 6)
+    B = (7, 8, 9, 10, 11, 12)
+    C = (13, 14, 15, 16, 17, 18)
     
-    I = ("0","6","13")
-    II = ("1","7","14")
-    III = ("2","9","15")
-    IV = ("3","10","16")
-    V = ("4","11","17")
-    VI = ("5","12","18")
+    I = (1,7,13)
+    II = (2,8,14)
+    III = (3,9,15)
+    IV = (4,10,16)
+    V = (5,11,17)
+    VI = (6,12,18)
     
     if sensor in A:
-        setMUX(1, LOW, LOW, LOW) #CH0
+        setMUX(1, 0, 0, 0) #CH0
         
     elif sensor in B:
-        setMUX(1, LOW, LOW, HIGH) #CH1
+        setMUX(1, 0, 0, 1) #CH1
         
     elif sensor in C:
-        setMUX(1, LOW, HIGH, LOW) #CH2
+        setMUX(1, 0, 1, 0) #CH2
         
         
     if sensor in I:
-        setMUX(2, LOW, LOW, LOW) #CH0
+        setMUX(2, 0, 0, 0) #CH0
         
     elif sensor in II:
-        setMUX(2, LOW, LOW, HIGH) #CH1
+        setMUX(2, 0, 0, 1) #CH1
         
     elif sensor in III:
-        setMUX(2, LOW, HIGH, LOW) #CH2
+        setMUX(2, 0, 1, 0) #CH2
         
     elif sensor in IV:
-        setMUX(2, LOW, HIGH, HIGH) #CH3
+        setMUX(2, 0, 1, 1) #CH3
         
     elif sensor in V:
-        setMUX(2, HIGH, LOW, LOW) #CH4
+        setMUX(2, 1, 0, 0) #CH4
         
     elif sensor in VI:
-        setMUX(2, HIGH, LOW, HIGH) #CH5
+        setMUX(2, 1, 0, 1) #CH5
+        
+def testMatrix():
+    """This function tests the 3x6 matrix by choosing each LED/PT from 1 to 16 squentially with a 1sec delay"""
+    
+    for i in range(1,18):
+        print("LED: " + str(i))
+        choose(i)
+        time.sleep(1)
+        
+        
+###################################################################################################
+#Main Code
+###################################################################################################
+
+testMatrix()
+
+GPIO.cleanup()
     
