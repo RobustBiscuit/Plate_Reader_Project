@@ -10,9 +10,15 @@
 #import required libraries
 import RPi.GPIO as GPIO
 import time
+from datetime import datetime
+
+import Adafruit_MCP3008 #this uses the MCP3008 10-bit ADC
+
+import csv
 
 #configuration
 GPIO.setmode(GPIO.BCM)   #Broadcom Pin Configuration
+GPIO.setwarnings(False)
 
 
 #output pins for MUX selection
@@ -24,6 +30,24 @@ GPIO.setup(26,GPIO.OUT) #c
 GPIO.setup(16,GPIO.OUT) #a
 GPIO.setup(20,GPIO.OUT) #b
 GPIO.setup(21,GPIO.OUT) #c
+
+#ADC SPI Configuration
+SPICLK = 11 #green
+SPIMISO = 9 #white
+SPIMOSI = 10  #grey
+SPICS = 8 #yellow
+
+GPIO.setup(SPIMOSI, GPIO.OUT)
+GPIO.setup(SPIMISO, GPIO.IN)
+GPIO.setup(SPICLK, GPIO.OUT)
+GPIO.setup(SPICS, GPIO.OUT)
+
+mcp = Adafruit_MCP3008.MCP3008(clk=SPICLK, cs=SPICS, mosi=SPIMOSI, miso=SPIMISO)
+
+#Variable Declerations
+adcPin = 1 #data in pin on ADC
+numSamples = 3 #how many readings to take from each well
+readingDelay = 0.1 #time, in sec, of how long to wait between readings
 
 ########################################################################################
 #FUNCTION DECLARATIONS
@@ -107,7 +131,26 @@ def testMatrix():
 #Main Code
 ###################################################################################################
 
-testMatrix()
+readingBuffer = [[None for i in range(numSamples)] for j in range(18)] #buffer list ot hold readings from ADC - 2D array
+now = datetime.now()
+
+for i in range(1,19):
+    choose(i) #select LED/PT pair
+    
+    for j in range(numSamples): #take numSamples number of readings from chosen well
+        readingBuffer[i-1][j] = str(mcp.read_adc(adcPin)) #read from ADC
+        time.sleep(readingDelay) #time between readings 
+
+outFileName = 'PlateReadings' + now.strftime("_%d%m%Y_%H%M%S") + ".csv"
+
+with open('Plate Readings/'+outFileName, 'w') as writeFile:
+    writer = csv.writer(writeFile)
+    writer.writerows(readingBuffer)
+writeFile.close()
+
+#for i in range(8):
+ #   print(mcp.read_adc(adcPin))
+  #  time.sleep(1)
 
 GPIO.cleanup()
     
