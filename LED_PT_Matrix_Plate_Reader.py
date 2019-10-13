@@ -15,8 +15,17 @@ from datetime import datetime
 import Adafruit_MCP3008 #this uses the MCP3008 10-bit ADC
 
 import csv
+import matplotlib.pyplot as plt
+import numpy as np
+
+import os
+import glob
 
 #configuration
+plt.ion()
+x=[]
+y=[]
+
 GPIO.setmode(GPIO.BCM)   #Broadcom Pin Configuration
 GPIO.setwarnings(False)
 
@@ -45,9 +54,13 @@ GPIO.setup(SPICS, GPIO.OUT)
 mcp = Adafruit_MCP3008.MCP3008(clk=SPICLK, cs=SPICS, mosi=SPIMOSI, miso=SPIMISO)
 
 #Variable Declerations
-adcPin = 1 #data in pin on ADC
-numSamples = 3 #how many readings to take from each well
-readingDelay = 0.1 #time, in sec, of how long to wait between readings
+adcPin = 0 #data in pin on ADC
+
+GreenLED = 22
+RedLED = 27
+
+GPIO.setup(GreenLED, GPIO.OUT)
+GPIO.setup(RedLED, GPIO.OUT)
 
 ########################################################################################
 #FUNCTION DECLARATIONS
@@ -121,36 +134,218 @@ def choose(sensor):
 def testMatrix():
     """This function tests the 3x6 matrix by choosing each LED/PT from 1 to 16 squentially with a 1sec delay"""
     
-    for i in range(1,18):
+    for i in range(1,19):
         print("LED: " + str(i))
         choose(i)
-        time.sleep(1)
+        time.sleep(0)
+        input("enter to cont")
         
+def takeReadings(numSamples, readingDelay, path, readingType):
+    """Iterates through each LED/PT pair, takes specified number of samples (numSamples) readings, with a delay (readingDelay) between each reading
+     computes the mean, and standard deviation of each well, and writes the resuling (numSamples+2)x18 Matrix. The additional 2 rows are for the mean and stdev calculation."""
+    
+    readingBuffer = [[None for i in range(numSamples)] for j in range(18)] #buffer list ot hold readings from ADC - 2D array
+
+    for i in range(1,19):
+        choose(i) #select LED/PT pair
+        time.sleep(0.1) #delay to avoide switching noise 
+        
+        for j in range(numSamples): #take numSamples number of readings from chosen well
+            readingBuffer[i-1][j] = mcp.read_adc(adcPin) #read from ADC
+            #readingBuffer[i-1][j] = str(mcp.read_adc(adcPin)) 
+            time.sleep(readingDelay) #time between readings
+        
+        #compute mean for row to 1 decimal place
+        mean = round(np.mean(readingBuffer[i-1]),1)
+        #append mean of row
+        readingBuffer[i-1].append(mean) #we are appending to the original bufferArray, not the numpy numeric type
+        #comput stdev to 1 decimal place
+        stdev = round(np.std(readingBuffer[i-1]),1)
+        #append standard deviation of row
+        readingBuffer[i-1].append(stdev)
+        
+    #readingBuffer = np.transpose(readingBuffer) #transpose so that cols are well number and rows are readings
+    
+    
+    outFileName = readingType + ".csv"
+
+    with open(path+'/'+outFileName, 'w') as writeFile:
+        writer = csv.writer(writeFile)
+        writer.writerows(readingBuffer) 
+    writeFile.close()
+    
+    #print(readingBuffer)
+    
+def plotData(path):
+	"""Plot a heatmap in a 6x3 matrix of the csv data given in path. Used for visualising readings after a test."""
+    global numSamples
+    
+    Bmean, Bstdev = np.loadtxt(path+'/baseline.csv', unpack=True, delimiter=',',usecols=(numSamples,numSamples+1))
+    Cmean, Cstdev = np.loadtxt(path+'/calibration.csv', unpack=True, delimiter=',',usecols=(numSamples,numSamples+1))
+    Rmean, Rstdev = np.loadtxt(path+'/readings.csv', unpack=True, delimiter=',',usecols=(numSamples,numSamples+1))
+    ODvalues = np.loadtxt(path+'/ODvalues.csv', unpack=True, delimiter=',')
+    
+    f=open(path+'/information.txt', 'r')
+    content=f.read()
+    f.close()
+    
+    wells = list(range(1,19))
+    
+    fig1,(ax1,ax2) = plt.subplots(1,2)
+    fig1.set_figwidth(10)
+    fig1.suptitle('additional information: '+ content)
+    
+    ax1.scatter(wells, ODvalues)
+    ax1.set_title('OD reading from each Well')
+    ax1.set(xlabel='Well number', ylabel="ODvalues", xticks=wells)
+    for i,j in zip(wells,ODvalues):
+        ax1.annotate(str(j),xy=(i,j))
+    
+    ax2.set_title('OD Readings Heatmap')
+    ax2.imshow(np.reshape(ODvalues,(-1,6)), cmap='jet', interpolation='nearest')
+    for i in range(3):
+        for j in range(6):
+            text = ax2.text(j, i, np.reshape(ODvalues,(-1,6))[i, j], ha="center", va="center", color="w")
+    
+    fig2,((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3)
+    fig2.set_figwidth(20)
+    fig2.set_figheight(8)
+    fig2.suptitle('additional information: '+ content)
+    
+    ax1.set_title('Baseline Readings per Well')
+    ax1.set(xlabel='Well Number', ylabel='ADC Reading Value - Baseline', xticks=wells)
+    ax1.scatter(wells, Bmean)
+    for i,j in zip(wells,Bmean):
+        ax1.annotate(str(j),xy=(i,j))
+    ax1.errorbar(wells, Bmean, yerr=Bstdev, fmt='o')
+    
+    ax2.set_title('Calibration Readings per Well')
+    ax2.set(xlabel='Well Number', ylabel='ADC Reading Value - Calibration', xticks=wells)
+    ax2.scatter(wells, Cmean)
+    for i,j in zip(wells,Cmean):
+        ax2.annotate(str(j),xy=(i,j))
+    ax2.errorbar(wells, Cmean, yerr=Cstdev, fmt='o')
+    
+    ax3.set_title('Meaurement Readings per Well')
+    ax3.set(xlabel='Well Number', ylabel='ADC Reading Valued - Measurement', xticks=wells)
+    ax3.scatter(wells, Rmean)
+    for i,j in zip(wells,Rmean):
+        ax3.annotate(str(j),xy=(i,j))
+    ax3.errorbar(wells, Rmean, yerr=Rstdev, fmt='o')
+    
+    ax4.set_title('Baseline Heatmap')
+    ax4.imshow(np.reshape(Bmean,(-1,6)), cmap='jet', interpolation='nearest')
+    for i in range(3):
+        for j in range(6):
+            text = ax4.text(j, i, np.reshape(Bmean,(-1,6))[i, j], ha="center", va="center", color="w")
+            
+    ax5.set_title('Calibration Heatmap')
+    ax5.imshow(np.reshape(Cmean,(-1,6)), cmap='jet', interpolation='nearest')
+    for i in range(3):
+        for j in range(6):
+            text = ax5.text(j, i, np.reshape(Cmean,(-1,6))[i, j], ha="center", va="center", color="w")
+            
+    ax6.set_title('Reading Heatmap')
+    ax6.imshow(np.reshape(Rmean,(-1,6)), cmap='jet', interpolation='nearest')
+    for i in range(3):
+        for j in range(6):
+            text = ax6.text(j, i, np.reshape(Rmean,(-1,6))[i, j], ha="center", va="center", color="w")
+    
+def toggleLED():
+    global cont
+    global red
+    global green
+    
+    cont = not(cont)
+    red = not(red)
+    green = not(green)
+    
+    GPIO.output(GreenLED, green)
+    GPIO.output (RedLED, red)
+    
         
 ###################################################################################################
 #Main Code
 ###################################################################################################
+#Modes: 1 - Debug Mode testMatrix()
+#       2 - Plot Mode (given path information, plots the data)
+#       3 - Single test mode, takes a set of reading from all 18 wells, saves to file, and plots scatter plot and heatmap
 
-readingBuffer = [[None for i in range(numSamples)] for j in range(18)] #buffer list ot hold readings from ADC - 2D array
-now = datetime.now()
+MODE = 3
 
-for i in range(1,19):
-    choose(i) #select LED/PT pair
+numSamples = 30 #number of samples per well
+readingDelay = 0.1 #delay between each reading
+
+if (MODE == 1):
+    testMatrix()
+
+
+elif (MODE==2):
+    path='Plate_Readings/05092019_180435'
+    plotData(path)
+
+elif (MODE==3):
+
+	#set local parameters
+    cont = 0 	#counter
+    red = 0		#redLED
+    green = 1	#greenLED
+
+    GPIO.output(GreenLED, green)
+    GPIO.output(RedLED,red)
+
+    input('Press Enter Key to Start...') #wait for user
+    toggleLED()
     
-    for j in range(numSamples): #take numSamples number of readings from chosen well
-        readingBuffer[i-1][j] = str(mcp.read_adc(adcPin)) #read from ADC
-        time.sleep(readingDelay) #time between readings 
+    text = input('Enter OD of plate being read or any relavent information: ') #enter a useful description to help with data management later on
 
-outFileName = 'PlateReadings' + now.strftime("_%d%m%Y_%H%M%S") + ".csv"
+    now = datetime.now() #get timestamp
 
-with open('Plate Readings/'+outFileName, 'w') as writeFile:
-    writer = csv.writer(writeFile)
-    writer.writerows(readingBuffer)
-writeFile.close()
+    #create a foldered for all the associated readings when the experiment is started
+    path = r'Plate_Readings/' + now.strftime("%d%m%Y_%H%M%S")
+    if not os.path.exists(path):
+        os.makedirs(path)
+    
+    outFileName = "information.txt"
 
-#for i in range(8):
- #   print(mcp.read_adc(adcPin))
-  #  time.sleep(1)
+    with open(path+'/'+outFileName, 'w') as writeFile:
+        writeFile.write(text)
+    writeFile.close()
 
-GPIO.cleanup()
+	#wait for user input
+    toggleLED()
+    input('Press Enter Key to Continue...')
+    toggleLED()
+
+	#take readings, with numSamples number of samples, readingDelay delay between each sample, and save to the identified path. The last parameter is used to identify the type of reading.
+    takeReadings(numSamples, readingDelay, path, 'readings') #first parameter is numSamples, second parameter is readingDelay
+
+    Rmean, Rstdev = np.loadtxt(path+'/readings.csv', unpack=True, delimiter=',',usecols=(numSamples,numSamples+1)) #compute mean and stdev
+
+    wells = list(range(1,19))
+    
+	#open file and prepare for plotting
+    f=open(path+'/information.txt', 'r')
+    content=f.read()
+    f.close()
+    
+	#configure plots
+    fig1,(ax1,ax2) = plt.subplots(1,2)
+    fig1.set_figwidth(10)
+    fig1.suptitle('additional information: ' + content)
+    
+	#scatter plot
+    ax1.scatter(wells, Rmean)
+    ax1.set_title('Reading from each Well')
+    ax1.set(xlabel='Well number', ylabel="Reading", xticks=wells)
+    for i,j in zip(wells,Rmean):
+        ax1.annotate(str(j),xy=(i,j))
+		
+    #heatmap
+    ax2.set_title('Readings Heatmap')
+    ax2.imshow(np.reshape(Rmean,(-1,6)), cmap='jet', interpolation='nearest')
+    for i in range(3):
+        for j in range(6):
+            text = ax2.text(j, i, np.reshape(Rmean,(-1,6))[i, j], ha="center", va="center", color="w")
+
     
